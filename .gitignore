@@ -15,3 +15,6 @@ Thumbs.db
 .probe-out.json
 .smoke-home/
 .rev-verify/
+
+# generated desktop bundle (produced by export-desktop-bundle.{sh,ps1}; not source)
+engram-desktop-bundle/
