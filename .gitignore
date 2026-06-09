@@ -1,0 +1,17 @@
+# deps / lockfiles (the package ships source; consumers install their own)
+node_modules/
+bun.lock
+bun.lockb
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# os / editor / logs
+.DS_Store
+Thumbs.db
+*.log
+
+# local scratch
+.probe-out.json
+.smoke-home/
+.rev-verify/
