@@ -313,12 +313,19 @@ export const EngramPlugin: Plugin = async (input) => {
     } catch {
       return
     }
+    // scope kind: a management-directory db has a 'workspace' marker next to it
+    // (<dir>/.engram/workspace) -> the reviewer gets workspace consolidation rules.
+    let kind = "project"
+    try {
+      if (fs.existsSync(path.join(path.dirname(plan.project_db), "workspace"))) kind = "workspace"
+    } catch { /* keep 'project' */ }
     const prompt = tpl
       .split("{{TRANSCRIPT}}").join(fwd(plan.slice))
       .split("{{ENGRAM}}").join(fwd(engram))
       .split("{{GENERAL_DB}}").join(fwd(plan.general_db))
       .split("{{PROJECT_DB}}").join(fwd(plan.project_db))
       .split("{{PROJECT_NAME}}").join(plan.project_name)
+      .split("{{KIND}}").join(kind)
       .split("{{PENDING}}").join(fwd(plan.pending))
       .split("{{WATERMARK}}").join(fwd(wm))
       .split("{{SKILL}}").join(fwd(skillPath ?? "")) + OPENCODE_TRANSCRIPT_NOTE
