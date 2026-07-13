@@ -63,7 +63,7 @@ Same engine as [engram](https://github.com/jimhy/engram) — tiered, ACT-R-style
 
 ## The reviewer
 
-Runs as an **isolated opencode session** (created in-process via the SDK client, fired with `promptAsync`), so its context is independent and the user's session is untouched. It runs as the self-provisioned **`engram-reviewer`** agent, pre-permissioned for `external_directory` + `bash` (it reads the transcript slice / `SKILL.md` outside the cwd and runs the `engram` binary) while `edit`/`webfetch` stay denied — so the background session never stalls on a permission prompt. It ends with `engram consolidate-done` (advances the watermark, clears the pending). If it never finishes (crash / restart), catch-up replays the pending on the next startup — nothing lost, nothing redone.
+Runs as an **isolated opencode session** (created in-process via the SDK client, fired with `promptAsync`), so its context is independent and the user's session is untouched. Live reviewer sessions are attached under the source session when possible, marked with `metadata.engram=true`, `metadata.engramRole="reviewer"`, `metadata.background=true`, and `metadata.hidden=true`, then archived immediately so opencode desktop does not show the temporary reviewer in normal session lists. It runs as the self-provisioned **`engram-reviewer`** agent, pre-permissioned for `external_directory` + `bash` (it reads the transcript slice / `SKILL.md` outside the cwd and runs the `engram` binary) while `edit`/`webfetch` stay denied — so the background session never stalls on a permission prompt. It ends with `engram consolidate-done` (advances the watermark, clears the pending). If it never finishes (crash / restart), catch-up replays the pending on the next startup — nothing lost, nothing redone.
 
 ## Structure (npm package)
 
@@ -99,7 +99,7 @@ The reviewer/query **agents and commands are not files** — they are injected a
 1. Install and open `opencode` in a project; send a message.
 2. **Injection**: ask `what do you remember about me?` — the answer should reflect your hot-index memories.
 3. **Commands**: run `/engram-status` — you should see the memory overview.
-4. **Review**: after a substantive exchange (≥ `ENGRAM_REVIEW_MIN_LINES` lines) a background session titled `engram-review` consolidates, then `~/.engram/opencode/watermark.json` advances and the pending clears.
+4. **Review**: after a substantive exchange (≥ `ENGRAM_REVIEW_MIN_LINES` lines), the background reviewer is marked and archived by default; verify it by `~/.engram/opencode/watermark.json` advancing and pending clearing. For debugging, search archived sessions by `metadata.engramRole="reviewer"` or title `engram-review`.
 
 ## License
 

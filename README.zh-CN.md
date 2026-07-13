@@ -63,7 +63,7 @@ opencode plugin engram-opencode
 
 ## 复盘者
 
-以一个**独立的 opencode 会话**运行（in-process SDK client 新建、`promptAsync` 发起），上下文独立、不污染用户会话。它以自动注册的 **`engram-reviewer`** agent 运行，预放行 `external_directory` + `bash`（要读工作目录外的转录切片 / `SKILL.md`、要跑 `engram` 二进制），同时 `edit`/`webfetch` 保持禁用 —— 所以后台会话**不会卡在权限询问**。它以 `engram consolidate-done` 收尾（推进水位线、清 pending）。若没跑完（崩溃/重启），下次启动 catch-up 补跑 pending —— 不丢不重。
+以一个**独立的 opencode 会话**运行（in-process SDK client 新建、`promptAsync` 发起），上下文独立、不污染用户会话。实时复盘会话会尽量挂到被复盘会话下面作为子会话，并带 `metadata.engram=true`、`metadata.engramRole="reviewer"`、`metadata.background=true`、`metadata.hidden=true` 标记；插件创建后会立即归档它，所以 opencode desktop 的普通会话列表默认不显示这个临时会话。它以自动注册的 **`engram-reviewer`** agent 运行，预放行 `external_directory` + `bash`（要读工作目录外的转录切片 / `SKILL.md`、要跑 `engram` 二进制），同时 `edit`/`webfetch` 保持禁用 —— 所以后台会话**不会卡在权限询问**。它以 `engram consolidate-done` 收尾（推进水位线、清 pending）。若没跑完（崩溃/重启），下次启动 catch-up 补跑 pending —— 不丢不重。
 
 ## 目录结构（npm 包）
 
@@ -99,7 +99,7 @@ install.{ps1,sh}                   本地/离线安装（auto-load 布局）
 1. 安装后在项目里打开 `opencode`，发一条消息。
 2. **注入**：问「你还记得关于我的什么？」—— 回答应体现你的热索引记忆。
 3. **命令**：跑 `/engram-status` —— 应看到记忆库概况。
-4. **复盘**：进行一段实质对话（≥ `ENGRAM_REVIEW_MIN_LINES` 行）后，后台出现一个标题 `engram-review` 的会话巩固，随后 `~/.engram/opencode/watermark.json` 推进、pending 清空。
+4. **复盘**：进行一段实质对话（≥ `ENGRAM_REVIEW_MIN_LINES` 行）后，后台复盘会话默认被标记并归档隐藏；验证以 `~/.engram/opencode/watermark.json` 推进、pending 清空为准。调试时可在归档会话里按 `metadata.engramRole="reviewer"` 或标题 `engram-review` 查找。
 
 ## 许可
 

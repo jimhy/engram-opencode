@@ -55,6 +55,14 @@ const DEFAULT_REVIEW_MIN_LINES = 10
 const REVIEWER_AGENT = "engram-reviewer"
 /** Pre-permissioned agent the `/engram-*` query commands run as (injected by the `config` hook). */
 const QUERY_AGENT = "engram"
+/** Stable marker for desktop/UI integrations that should hide background consolidation sessions. */
+const REVIEWER_SESSION_TITLE = "engram-review"
+const REVIEWER_SESSION_METADATA = {
+  engram: true,
+  engramRole: "reviewer",
+  background: true,
+  hidden: true,
+} as const
 
 /** Permission profile shared by both injected agents: read outside cwd + run engram via bash; no edits/net. */
 const ENGRAM_AGENT_PERMISSION = {
@@ -238,7 +246,7 @@ export const EngramPlugin: Plugin = async (input) => {
       const minLines = intEnv("ENGRAM_REVIEW_MIN_LINES", DEFAULT_REVIEW_MIN_LINES)
       const newLines = (plan.end_line ?? 0) - (plan.start_line ?? 0)
       if (newLines < minLines) return // leave the pending; next startup catch-up handles it once it grows
-      await launchReviewer(plan)
+      await launchReviewer(plan, sid)
     } finally {
       reviewing = false
     }
@@ -305,7 +313,7 @@ export const EngramPlugin: Plugin = async (input) => {
    * the prompt asynchronously. The reviewer ends by running `engram consolidate-done`, which
    * advances the watermark and clears the pending.
    */
-  async function launchReviewer(plan: ReviewPlan): Promise<void> {
+  async function launchReviewer(plan: ReviewPlan, parentSessionID?: string): Promise<void> {
     if (!reviewerPromptPath || !engram) return
     let tpl: string
     try {
@@ -331,10 +339,15 @@ export const EngramPlugin: Plugin = async (input) => {
       .split("{{SKILL}}").join(fwd(skillPath ?? "")) + OPENCODE_TRANSCRIPT_NOTE
 
     try {
-      const created = await client.session.create({ body: { title: "engram-review" }, query: { directory } })
-      const rsid = created?.data?.id as string | undefined
+      const metadata = {
+        ...REVIEWER_SESSION_METADATA,
+        pending: fwd(plan.pending),
+        slice: fwd(plan.slice),
+      }
+      const rsid = await createReviewerSession(metadata, parentSessionID)
       if (!rsid) return
       reviewerSessions.add(rsid)
+      await hideReviewerSession(rsid, metadata)
       // Drive the reviewer with the bundled `engram-reviewer` agent, which is pre-permissioned to
       // read outside the cwd (the transcript slice + SKILL.md live under ~/.engram and ~/.config)
       // and to run the engram binary via bash — so the background session never stalls on an
@@ -344,6 +357,67 @@ export const EngramPlugin: Plugin = async (input) => {
       if (model) body.model = model
       await client.session.promptAsync({ path: { id: rsid }, query: { directory }, body: body as never })
     } catch { /* best-effort: pending remains, next startup catch-up retries */ }
+  }
+
+  /**
+   * Current opencode desktop hides archived sessions from its normal lists, while still allowing
+   * the background reviewer to keep running by id. Marking the session metadata above gives newer
+   * desktop builds a stronger filter; archiving is the compatibility path for existing builds.
+   */
+  async function createReviewerSession(
+    metadata: Record<string, unknown>,
+    parentSessionID?: string,
+  ): Promise<string | null> {
+    const attempts: Array<Record<string, unknown>> = []
+    if (parentSessionID) attempts.push({ parentID: parentSessionID, title: REVIEWER_SESSION_TITLE, metadata })
+    attempts.push({ title: REVIEWER_SESSION_TITLE, metadata })
+    attempts.push({ title: REVIEWER_SESSION_TITLE })
+
+    for (const body of attempts) {
+      try {
+        const created = await client.session.create({ body: body as never, query: { directory } } as never)
+        const id = created?.data?.id as string | undefined
+        if (id) return id
+      } catch { /* try the next compatibility shape */ }
+    }
+    return null
+  }
+
+  async function hideReviewerSession(sessionID: string, metadata: Record<string, unknown>): Promise<void> {
+    const archived = Date.now()
+    try {
+      await client.session.update({
+        path: { id: sessionID },
+        query: { directory },
+        body: { time: { archived }, metadata },
+      } as never)
+      return
+    } catch {
+      try {
+        await client.session.update({
+          path: { id: sessionID },
+          query: { directory },
+          body: { time: { archived } },
+        } as never)
+        return
+      } catch { /* try the legacy SDK shape */ }
+      try {
+        await client.session.update({
+          sessionID,
+          directory,
+          time: { archived },
+          metadata,
+        } as never)
+        return
+      } catch { /* try without metadata */ }
+      try {
+        await client.session.update({
+          sessionID,
+          directory,
+          time: { archived },
+        } as never)
+      } catch { /* older SDKs may only accept title updates; metadata from create is still useful */ }
+    }
   }
 
   // ----- small utilities

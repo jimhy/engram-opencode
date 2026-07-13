@@ -74,7 +74,10 @@ app 首启把 `plugin/engram.ts` 拷到 `~/.config/opencode/plugin/engram.ts`，
 - **注入热索引**：每回合通过 `experimental.chat.system.transform` 把相关记忆加到系统提示（压缩后自动重注）。
 - **自动注册 agent + 命令**：插件的 `config` hook 会注入两个**已预放行权限**的 agent（`engram-reviewer` 复盘者、`engram` 查询助手）和四个命令 `/engram-recall` `/engram-status` `/engram-list` `/engram-render`。**无需放任何 agent/command 文件。**
 - **会话空闲自动复盘**：`session.idle` 时按增量阈值起一个独立复盘会话（用 `engram-reviewer` agent，已放行 `external_directory`+`bash`，后台不会卡权限弹窗），巩固记忆并 `consolidate-done` 收尾；崩溃/重启用启动 catch-up 补跑。
+- **后台复盘会话默认隐藏**：实时复盘会话会尽量作为源会话的子会话创建，并带 `metadata.engram=true`、`metadata.engramRole="reviewer"`、`metadata.background=true`、`metadata.hidden=true`；创建后插件会立即写 `time.archived`，兼容当前 desktop 用 archived 过滤普通列表的行为。
 - **记忆库位置**：`~/.engram/general.redb`（L1-3）+ 各项目 `<项目>/.engram/engram.redb`（L4）；复盘进度账本在 `~/.engram/opencode/`。**与 CLI / Claude Code / Codex 版本共用同一记忆库**，三端互通。
+
+若 desktop 自己维护会话索引或有自定义会话列表，请把 `metadata.engramRole === "reviewer"` 或 `metadata.hidden === true` 当作稳定隐藏信号；`engram-review` 标题只用于人类调试，不建议作为唯一过滤条件。归档隐藏不影响 `promptAsync`：复盘会话仍按 id 在后台运行并收尾。
 
 ## 7. 权限注意
 
@@ -86,7 +89,7 @@ app 首启把 `plugin/engram.ts` 拷到 `~/.config/opencode/plugin/engram.ts`，
 2. **注册**：跑 `opencode debug config`（或等价的 resolved-config dump）应能看到 agent `engram-reviewer` / `engram` 与 command `engram-recall/status/list/render`。
 3. **注入**：发一条消息问「你记得我什么」，回答应体现已有记忆（首次空库则无内容，属正常）。
 4. **命令**：触发 `/engram-status`，应输出记忆库概况（各层条数）。
-5. **复盘**：进行一段实质对话（增量 ≥ `ENGRAM_REVIEW_MIN_LINES`，默认 10），随后 `~/.engram/opencode/watermark.json` 应推进、`~/.engram/opencode/pending/` 清空，记忆库可能新增条目。
+5. **复盘**：进行一段实质对话（增量 ≥ `ENGRAM_REVIEW_MIN_LINES`，默认 10），后台 `engram-review` 复盘会话不应出现在普通会话列表；随后 `~/.engram/opencode/watermark.json` 应推进、`~/.engram/opencode/pending/` 清空，记忆库可能新增条目。调试时可在归档会话里按 `metadata.engramRole="reviewer"` 查找。
 
 ## 9. 环境变量
 
