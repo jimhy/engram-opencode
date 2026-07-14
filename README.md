@@ -103,4 +103,4 @@ The reviewer/query **agents and commands are not files** — they are injected a
 
 ## License
 
-MIT
+Apache License 2.0 — see [LICENSE](./LICENSE).

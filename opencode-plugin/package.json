@@ -1,6 +1,6 @@
 {
   "name": "engram-opencode",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "Engram brain-inspired layered long-term memory — opencode plugin. Injects a memory hot-index at session start, runs an independent reviewer on session idle to consolidate what mattered, and adds /engram-* commands. Self-provisions its reviewer/query agents via the config hook. Portable Rust engine + redb store, shared with the Claude Code / Codex adapters.",
   "keywords": ["opencode", "opencode-plugin", "memory", "engram", "long-term-memory", "recall"],

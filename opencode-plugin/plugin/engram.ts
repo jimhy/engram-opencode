@@ -111,6 +111,11 @@ export const EngramPlugin: Plugin = async (input) => {
   // guard is for `opencode run`-style subprocess / debug use where we must not recurse.
   if (process.env.ENGRAM_REVIEWER === "1") return {}
 
+  // 代理派生（堵 403）：复盘请求若缺 HTTPS_PROXY 会走直连，被 Anthropic 以「403 Request not
+  // allowed」按地区限制拒绝。opencode 的复盘者是 in-process 会话（不 spawn 子进程），所以把派生
+  // 结果写进本进程 process.env，让其后发起的模型请求继承。见 deriveReviewerProxy。
+  deriveReviewerProxy()
+
   const { client, directory } = input
 
   // ---- per-CLI ledger paths (isolated from claude/codex), shared store resolved by the engine.
@@ -493,6 +498,35 @@ function intEnv(name: string, fallback: number): number {
 /** Forward-slash a path so it survives being embedded in the reviewer's shell commands. */
 function fwd(p: string): string {
   return p ? p.split("\\").join("/") : p
+}
+
+/**
+ * 代理派生（堵 403）：headless 复盘请求若缺 HTTPS_PROXY 会走直连，被 Anthropic 以
+ * 「403 Request not allowed」按地区限制拒绝。opencode 的复盘者跑在本插件进程内（in-process
+ * 会话，非 spawn），故把派生结果写进 process.env，供其后的模型请求继承。
+ * 优先级：① ENGRAM_REVIEWER_PROXY 显式指定；② 已有 HTTPS_PROXY/https_proxy → 继承不动；
+ * ③ ALL_PROXY/all_proxy → 据以设两者；④ 都没有 → 不设（直连，可能失败）。无系统代理注册表分支
+ * （与 POSIX launcher 同款；Windows 上主要走 .ps1 launcher 的注册表派生）。值可能是 host:port
+ * （无 scheme），统一补 http://。best-effort：任何异常都吞掉，绝不影响插件加载。
+ */
+function deriveReviewerProxy(): void {
+  try {
+    const norm = (v: string): string => {
+      const t = v.trim()
+      return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(t) ? t : "http://" + t
+    }
+    const set = (p: string): void => {
+      process.env.HTTPS_PROXY = p
+      process.env.HTTP_PROXY = p
+    }
+    const explicit = process.env.ENGRAM_REVIEWER_PROXY
+    if (explicit && explicit.trim()) return set(norm(explicit))
+    if ((process.env.HTTPS_PROXY && process.env.HTTPS_PROXY.trim()) ||
+        (process.env.https_proxy && process.env.https_proxy.trim())) return
+    const all = process.env.ALL_PROXY || process.env.all_proxy
+    if (all && all.trim()) return set(norm(all))
+    // 都没有 → 不设（直连，可能失败，留给告警）
+  } catch { /* never break plugin load */ }
 }
 
 /** Make a session id safe to use as a filename. */

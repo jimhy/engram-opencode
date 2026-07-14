@@ -103,4 +103,4 @@ install.{ps1,sh}                   本地/离线安装（auto-load 布局）
 
 ## 许可
 
-MIT
+Apache License 2.0 —— 见 [LICENSE](./LICENSE)。
