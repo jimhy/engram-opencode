@@ -459,8 +459,10 @@ export const EngramPlugin: Plugin = async (input) => {
       if (!self) return // 精简安装，没有自带的可推
       const shared = path.join(os.homedir(), ".engram", "bin", name)
       if (fs.existsSync(shared)) {
-        // 廉价短路：同版本同平台的 CI 产物字节数一致，先比大小免掉两次进程启动。
-        if (fs.statSync(shared).size === fs.statSync(self).size) return
+        // ⚠ 这里**曾经**先比文件大小做短路，为的是省掉两次 --version。它是错的：
+        // 只要某次发版没动 Rust 源码（只改脚本/文档/清单），四平台二进制字节数就完全
+        // 相同——v1.4.0 与 v1.5.0 的 windows exe 都是 3431936 字节，实测撞上。
+        // 那会让收敛器**永久**判成「已最新」而失效，不是漏一次而已。一律实打实比版本。
         const have = binVersion(shared)
         const want = binVersion(self)
         if (!want) return
