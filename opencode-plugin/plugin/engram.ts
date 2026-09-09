@@ -134,6 +134,9 @@ export const EngramPlugin: Plugin = async (input) => {
   // here/..), entry-at-package-root (assets at here), and the legacy install layout (<config>/engram-data).
   const here = pluginDir()
   const assetRoots = [here, path.join(here, ".."), path.join(here, "..", "engram-data")]
+  // 把引擎收敛到公共位置 ~/.engram/bin（全机一份、谁新用谁），再解析。
+  // 与 ensure-engram.sh 同语义，只是 opencode 跑在 Node/Bun 里、不便依赖 bash。
+  ensureSharedEngram(assetRoots)
   const engram = resolveEngramBin(assetRoots)
   const reviewerPromptPath = firstExisting(assetRoots.map((r) => path.join(r, "scripts", "reviewer-prompt.md")))
   const skillPath = firstExisting(assetRoots.map((r) => path.join(r, "skills", "engram", "SKILL.md")))
@@ -443,13 +446,77 @@ export const EngramPlugin: Plugin = async (input) => {
     }
   }
 
+  // 把插件自带的引擎复制到公共位置 ~/.engram/bin/，条件是公共位置**缺失或更旧**。
+  //
+  // 存在的理由：各端解析都是「公共位置优先」，而公共位置那份可能比自带的旧
+  // （用户先装 A 端放进 1.4.0，B 端后来升到 1.5.0 —— 不收敛的话 B 反而降级跑 1.4.0）。
+  // 语义是**谁新用谁**：公共位置比自带的新时原样保留，让它收敛到全机最新那份。
+  // 全程 try/catch 吞掉：这是锦上添花，绝不能因为它让会话起不来。
+  function ensureSharedEngram(roots: string[]): void {
+    try {
+      const name = engramAssetName()
+      const self = firstExisting(roots.map((r) => path.join(r, "bin", name)))
+      if (!self) return // 精简安装，没有自带的可推
+      const shared = path.join(os.homedir(), ".engram", "bin", name)
+      if (fs.existsSync(shared)) {
+        // 廉价短路：同版本同平台的 CI 产物字节数一致，先比大小免掉两次进程启动。
+        if (fs.statSync(shared).size === fs.statSync(self).size) return
+        const have = binVersion(shared)
+        const want = binVersion(self)
+        if (!want) return
+        if (have && !isOlderVersion(have, want)) return // 公共位置不更旧 → 保留它
+      }
+      fs.mkdirSync(path.dirname(shared), { recursive: true })
+      const tmp = shared + ".part"
+      fs.copyFileSync(self, tmp)
+      try { fs.chmodSync(tmp, 0o755) } catch { /* windows */ }
+      fs.renameSync(tmp, shared) // 原子替换，别让并发会话读到半个文件
+    } catch { /* best-effort */ }
+  }
+
+  function engramAssetName(): string {
+    if (process.platform === "win32") return "engram-windows-x86_64.exe"
+    if (process.platform === "darwin") return process.arch === "arm64" ? "engram-macos-aarch64" : "engram-macos-x86_64"
+    return process.arch === "arm64" ? "engram-linux-aarch64" : "engram-linux-x86_64"
+  }
+
+  // `engram 1.4.0` → `1.4.0`；取不到返回 null。
+  function binVersion(bin: string): string | null {
+    try {
+      const r = spawnSync(bin, ["--version"], { encoding: "utf8", timeout: 5000, windowsHide: true })
+      const out = (r.stdout || "").trim()
+      if (!out) return null
+      const last = out.split(/\s+/).pop()
+      return last || null
+    } catch { return null }
+  }
+
+  // a 是否严格旧于 b：按 `.` 分段数值比较，缺失段补 0（与 AIChat 侧判据同规则）。
+  function isOlderVersion(a: string, b: string): boolean {
+    const pa = a.split(".").map((x) => parseInt(x, 10) || 0)
+    const pb = b.split(".").map((x) => parseInt(x, 10) || 0)
+    const n = Math.max(pa.length, pb.length)
+    for (let i = 0; i < n; i++) {
+      const x = pa[i] ?? 0
+      const y = pb[i] ?? 0
+      if (x !== y) return x < y
+    }
+    return false
+  }
+
   function resolveEngramBin(roots: string[]): string | null {
     const env = process.env.ENGRAM_BIN
     if (env && fs.existsSync(env)) return env
     let name = "engram-linux-x86_64"
     if (process.platform === "win32") name = "engram-windows-x86_64.exe"
     else if (process.platform === "darwin") name = process.arch === "arm64" ? "engram-macos-aarch64" : "engram-macos-x86_64"
-    return firstExisting(roots.map((r) => path.join(r, "bin", name)))
+    // 二进制解析三档：ENGRAM_BIN 覆盖（上面）→ 公共位置（全机一份，与 ~/.engram 库
+    // 同目录、不隶属任何 CLI）→ 插件自带的兜底（离线 / 未装公共位置时）。
+    // 共用一份的好处是版本天然统一，否则各家 CLI 各带各的、同一个库被不同版本读写。
+    return firstExisting([
+      path.join(os.homedir(), ".engram", "bin", name),
+      ...roots.map((r) => path.join(r, "bin", name)),
+    ])
   }
 
   function run(bin: string, args: string[]) {
